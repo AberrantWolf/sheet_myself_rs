@@ -1,14 +1,29 @@
-use std::collections::HashMap;
-use std::time::{Instant, SystemTime};
-use eframe::{egui, epi};
+use chrono::{Duration, NaiveDate, Utc};
 use eframe::egui::RichText;
+use eframe::{egui, epi};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // A stored entry for time spend doing a Thing
-#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Deserialize, Serialize)]
 #[cfg_attr(feature = "persistence", serde(default))]
 pub struct SheetActionRecord {
-    date: Instant,
+    date: NaiveDate,
     duration: u64,
+
+    #[serde(skip_serializing)]
+    editing: bool,
+}
+
+impl Default for SheetActionRecord {
+    fn default() -> Self {
+        let now = Utc::now();
+        Self {
+            date: now.naive_local().date(),
+            duration: 0,
+            editing: false,
+        }
+    }
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -38,12 +53,11 @@ impl epi::App for SheetMyselfApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
-        let Self { player_name, skills_list, value } = self;
-
-        // Examples of how to create different panels and windows.
-        // Pick whichever suits you.
-        // Tip: a good default choice is to just keep the `CentralPanel`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
+        let Self {
+            player_name,
+            skills_list,
+            value,
+        } = self;
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
@@ -61,31 +75,7 @@ impl epi::App for SheetMyselfApp {
             egui::warn_if_debug_build(ui);
         });
 
-        // egui::SidePanel::left("side_panel").show(ctx, |ui| {
-        //     ui.heading("Side Panel");
-        //
-        //     ui.horizontal(|ui| {
-        //         ui.label("Write something: ");
-        //         ui.text_edit_singleline(player_name);
-        //     });
-        //
-        //     ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
-        //     if ui.button("Increment").clicked() {
-        //         *value += 1.0;
-        //     }
-        //
-        //     ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-        //         ui.horizontal(|ui| {
-        //             ui.spacing_mut().item_spacing.x = 0.0;
-        //             ui.label("powered by ");
-        //             ui.hyperlink_to("egui", "https://github.com/emilk/egui");
-        //             ui.label(" and ");
-        //             ui.hyperlink_to("eframe", "https://github.com/emilk/egui/tree/master/eframe");
-        //         });
-        //     });
-        // });
-
-        egui::SidePanel::left("section_chooser").show(ctx, |ui|{
+        egui::SidePanel::left("section_chooser").show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
                 ui.button("Skills");
             });
@@ -101,12 +91,20 @@ impl epi::App for SheetMyselfApp {
 
             // The central panel the region left after adding TopPanel's and SidePanel's
             skills_list.iter().for_each(|(skill_name, records)| {
-                ui.collapsing(skill_name, |ui| {
-                    // TODO: draw each row
+                ui.collapsing(RichText::new(skill_name.clone()).heading(), |ui| {
+                    for rec in records {
+                        ui.horizontal(|ui| {
+                            ui.label(rec.date.format("%Y %m %d").to_string());
+                        });
+                    }
+                    // TODO: add a dummy row that if you click on it'll auto add a new item
+                    ui.label("Click to add entry...");
                 });
             });
 
-            // TODO: Add a button to add new skills
+            if ui.button("New Skill").clicked() {
+                skills_list.insert("new skill".into(), Vec::new());
+            }
         });
     }
 
@@ -125,7 +123,7 @@ impl epi::App for SheetMyselfApp {
         }
     }
 
-    /// Called by the frame work to save state before shutdown.
+    /// Called by the framework to save state before shutdown.
     /// Note that you must enable the `persistence` feature for this to work.
     #[cfg(feature = "persistence")]
     fn save(&mut self, storage: &mut dyn epi::Storage) {
