@@ -1,13 +1,14 @@
 [package]
-name = "eframe_template"
-version = "0.1.0"
-authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
+name = "sheet_myself_rs"
+version = "0.0.1"
+authors = ["Scott Harper <orcein@gmail.com>"]
 edition = "2021"
 rust-version = "1.56"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
+name = "smlib"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
