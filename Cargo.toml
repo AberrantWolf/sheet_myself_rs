@@ -15,6 +15,7 @@ crate-type = ["cdylib", "rlib"]
 eframe = "0.17.0" # Gives us egui, epi and web+native backends
 serde = { version = "1", features = ["derive"] }
 chrono = { version ="0.4", features = ["serde"] }
+uuid = { version = "0.8", features = ["serde", "v4"] }
 
 [features]
 default = []

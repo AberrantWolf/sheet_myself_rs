@@ -1,8 +1,8 @@
-use chrono::{Duration, NaiveDate, Utc};
-use eframe::egui::RichText;
+use chrono::{Datelike, NaiveDate, Utc};
 use eframe::{egui, epi};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use uuid::Uuid;
 
 // A stored entry for time spend doing a Thing
 #[derive(Deserialize, Serialize)]
@@ -10,9 +10,6 @@ use std::collections::HashMap;
 pub struct SheetActionRecord {
     date: NaiveDate,
     duration: u64,
-
-    #[serde(skip_serializing)]
-    editing: bool,
 }
 
 impl Default for SheetActionRecord {
@@ -21,7 +18,21 @@ impl Default for SheetActionRecord {
         Self {
             date: now.naive_local().date(),
             duration: 0,
-            editing: false,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct Skill {
+    name: String,
+    records: Vec<SheetActionRecord>,
+}
+
+impl Default for Skill {
+    fn default() -> Self {
+        Self {
+            name: "new skill".to_string(),
+            records: Vec::new(),
         }
     }
 }
@@ -31,11 +42,9 @@ impl Default for SheetActionRecord {
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct SheetMyselfApp {
     player_name: String,
-    skills_list: HashMap<String, Vec<SheetActionRecord>>,
-
+    skills_list: HashMap<Uuid, Skill>,
     // this how you opt-out of serialization of a member
-    #[cfg_attr(feature = "persistence", serde(skip))]
-    value: f32,
+    // #[cfg_attr(feature = "persistence", serde(skip))]
 }
 
 impl Default for SheetMyselfApp {
@@ -43,8 +52,7 @@ impl Default for SheetMyselfApp {
         Self {
             // Example stuff:
             player_name: "New Player Name".to_owned(),
-            skills_list: HashMap::<String, Vec<SheetActionRecord>>::new(),
-            value: 2.7,
+            skills_list: HashMap::<Uuid, Skill>::new(),
         }
     }
 }
@@ -56,7 +64,6 @@ impl epi::App for SheetMyselfApp {
         let Self {
             player_name,
             skills_list,
-            value,
         } = self;
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -77,12 +84,14 @@ impl epi::App for SheetMyselfApp {
 
         egui::SidePanel::left("section_chooser").show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
-                ui.button("Skills");
+                if ui.button("Skills").clicked() {
+                    // TODO: swap to skills page if we're not there...
+                }
             });
         });
 
         egui::TopBottomPanel::top("player_info_top").show(ctx, |ui| {
-            ui.label(RichText::new(player_name.clone()).heading());
+            ui.text_edit_singleline(player_name);
             // TODO: Add a button to edit the player's name... when you hover over the label...?
         });
 
@@ -90,20 +99,100 @@ impl epi::App for SheetMyselfApp {
             // TODO: have a variable affected by the section selector to view various info pages here
 
             // The central panel the region left after adding TopPanel's and SidePanel's
-            skills_list.iter().for_each(|(skill_name, records)| {
-                ui.collapsing(RichText::new(skill_name.clone()).heading(), |ui| {
-                    for rec in records {
-                        ui.horizontal(|ui| {
-                            ui.label(rec.date.format("%Y %m %d").to_string());
-                        });
+            skills_list.iter_mut().for_each(|(skill_id, skill)| {
+                let Skill { name, records } = skill;
+                let collapse_id = ui.make_persistent_id(skill_id);
+
+                let mut expanded =
+                    if let Some(b) = ui.memory().data.get_persisted::<bool>(collapse_id) {
+                        b
+                    } else {
+                        true
+                    };
+
+                let expand_text = match expanded {
+                    true => " v ",
+                    false => " > ",
+                };
+
+                ui.horizontal_top(|ui| {
+                    if ui.button(expand_text).clicked() {
+                        expanded = !expanded;
+                        ui.memory().data.insert_persisted(collapse_id, expanded);
                     }
-                    // TODO: add a dummy row that if you click on it'll auto add a new item
-                    ui.label("Click to add entry...");
+                    ui.text_edit_singleline(name);
                 });
+                if expanded {
+                    ui.indent(collapse_id, |ui| {
+                        egui::Grid::new("entry_grid").show(ui, |ui| {
+                            // TODO: Add little arrow buttons to sort by year/month/day/etc
+                            ui.label("Year");
+                            ui.label("Month");
+                            ui.label("Day");
+                            ui.label("Duration");
+                            ui.end_row();
+
+                            let mut idx = 0;
+                            while idx < records.len() {
+                                let mut rec = &mut records[idx];
+                                let mut year = rec.date.year().to_string();
+                                let mut month = rec.date.month().to_string();
+                                let mut day = rec.date.day().to_string();
+                                let mut duration = rec.duration.to_string();
+
+                                if ui.text_edit_singleline(&mut year).changed() {
+                                    if let Ok(i) = year.parse::<i32>() {
+                                        rec.date = if let Some(new_rec) = rec.date.with_year(i) {
+                                            new_rec
+                                        } else {
+                                            rec.date
+                                        };
+                                    }
+                                };
+                                if ui.text_edit_singleline(&mut month).changed() {
+                                    if let Ok(i) = month.parse::<u32>() {
+                                        rec.date = if let Some(new_rec) = rec.date.with_month(i) {
+                                            new_rec
+                                        } else {
+                                            rec.date
+                                        };
+                                    }
+                                };
+                                if ui.text_edit_singleline(&mut day).changed() {
+                                    if let Ok(i) = day.parse::<u32>() {
+                                        rec.date = if let Some(new_rec) = rec.date.with_day(i) {
+                                            new_rec
+                                        } else {
+                                            rec.date
+                                        };
+                                    }
+                                };
+
+                                if ui.text_edit_singleline(&mut duration).changed() {
+                                    if let Ok(i) = duration.parse::<u64>() {
+                                        rec.duration = i;
+                                    }
+                                }
+
+                                if ui.button(" - ").clicked() {
+                                    records.remove(idx);
+                                } else {
+                                    idx += 1;
+                                }
+
+                                ui.end_row();
+                            }
+                        });
+
+                        if ui.button("Add entry...").clicked() {
+                            records.push(SheetActionRecord::default());
+                        }
+                    });
+                }
             });
 
             if ui.button("New Skill").clicked() {
-                skills_list.insert("new skill".into(), Vec::new());
+                skills_list.insert(Uuid::new_v4(), Skill::default());
             }
         });
     }
