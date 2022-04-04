@@ -43,8 +43,20 @@ impl SheetMyselfApp {
         if path.exists() {
             if let Ok(file) = File::open(path) {
                 let reader = BufReader::new(file);
-                if let Ok(app_data) = serde_json::from_reader(reader) {
-                    return app_data;
+                if let Ok(SheetMyselfApp {
+                    player_name,
+                    mut skills_list,
+                }) = serde_json::from_reader(reader)
+                {
+                    skills_list.iter_mut().for_each(|(_uuid, skill)| {
+                        skill.sort_actions();
+                        skill.calculate_exp();
+                    });
+
+                    return SheetMyselfApp {
+                        player_name,
+                        skills_list,
+                    };
                 }
             }
         }
@@ -132,7 +144,12 @@ impl epi::App for SheetMyselfApp {
                 // Alter-alternatively, go through and look for a focus lost but none gained across
                 // all the text edit fields?
                 let mut need_sort = false;
-                let Skill { name, records } = skill;
+                let Skill {
+                    name,
+                    records,
+                    potential_bonus,
+                    total_exp,
+                } = skill;
                 let collapse_id = ui.make_persistent_id(skill_id);
 
                 let mut expanded =
@@ -147,12 +164,15 @@ impl epi::App for SheetMyselfApp {
                     false => " > ",
                 };
 
-                ui.horizontal_top(|ui| {
+                ui.horizontal(|ui| {
                     if ui.button(expand_text).clicked() {
                         expanded = !expanded;
                         ui.memory().data.insert_persisted(collapse_id, expanded);
                     }
                     ui.text_edit_singleline(name);
+                    let rounded_total = (*total_exp * 10f64).round() / 10f64;
+                    ui.label(format!("EXP: {}", rounded_total));
+                    ui.label(format!("Level: <<TODO>>"));
                 });
                 if expanded {
                     ui.indent(collapse_id, |ui| {
@@ -180,8 +200,10 @@ impl epi::App for SheetMyselfApp {
                                 let duration_field = ui.text_edit_singleline(&mut duration);
 
                                 let total_exp = rec.base_exp + rec.bonus_exp;
-                                ui.label(total_exp.to_string());
-                                ui.label(format!("({})", rec.bonus_exp));
+                                let rounded_total = (total_exp * 10f64).round() / 10f64;
+                                let rounded_bonus = (rec.bonus_exp * 10f64).round() / 10f64;
+                                ui.label(rounded_total.to_string());
+                                ui.label(format!("({})", rounded_bonus));
 
                                 if year_field.changed() {
                                     if let Ok(i) = year.parse::<i32>() {
@@ -243,9 +265,12 @@ impl epi::App for SheetMyselfApp {
                             }
                         });
 
-                        if ui.button("Add entry...").clicked() {
-                            records.push(SheetActionRecord::default());
-                        }
+                        ui.horizontal(|ui| {
+                            if ui.button("Add entry...").clicked() {
+                                records.push(SheetActionRecord::default());
+                            }
+                            ui.label(format!("Next bonus: {} exp", potential_bonus));
+                        });
                     });
                 }
 
